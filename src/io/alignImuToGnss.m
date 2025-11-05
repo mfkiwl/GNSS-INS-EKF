@@ -1,5 +1,5 @@
-function imu_batches = alignImuToGnss(imu_cell, obs, leap_seconds)
-% splitIMUbyGNSS 自动将 IMU 按 GNSS 观测时间分批
+function imu_batches = alignImuToGnss(imu_cell, obs_time, leap_seconds)
+% alignImuToGnss 自动将 IMU 按 GNSS 观测时间分批
 % imu_cell: 结构体，包含 imu_cell{1}.time, .acc, .quat
 % obs: GNSS 观测结构数组，包含 .week, .tow
 % leap_seconds: 当前年份闰秒数，例如 2021=18, 2025=19
@@ -8,9 +8,9 @@ if nargin < 3
     leap_seconds = 18; % 默认值，可修改
 end
 
-imu_time = imu_cell{1}.time; % Unix 秒
-imu_acc  = imu_cell{1}.acc;
-imu_quat = imu_cell{1}.quat;
+imu_time = imu_cell.time; % Unix 秒
+imu_acc  = imu_cell.acc;
+imu_quat = imu_cell.quat;
 
 % 去重并保证严格单调
 [imu_time, ia] = unique(imu_time, 'stable'); 
@@ -25,11 +25,11 @@ for i = 2:length(imu_time)
 end
 
 % GNSS GPST -> Unix
-n = obs.n;
+n = obs_time.n;
 gps_unix_offset = seconds(datetime(1980,1,6) - datetime(1970,1,1));
 gnss_unix = zeros(n,1);
 for i = 1:n
-    gps_seconds = obs.week(i)*7*24*3600 + obs.tow(i);
+    gps_seconds = obs_time.week(i)*7*24*3600 + obs_time.tow(i);
     gnss_unix(i) = gps_seconds + gps_unix_offset - leap_seconds;
 end
 
