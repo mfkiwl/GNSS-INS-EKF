@@ -1,34 +1,68 @@
-classdef TightGNSSModel < handle
-% TC：一历元多星时，每颗星独立调用本模型，然后把 (r,H,R) 逐行堆叠到一起
-% 量测：z_i = 伪距_i
-% 模型：h_i(x) = ||pos - rs_i|| + c*cb   （此处示例未包含钟差，可自行扩展）
+classdef TightGNSSModel < ObservationModel
 
     methods
-        function [r, H, R] = linearize(~, x, z_one, cfg, sat)
-            % x: [pos; vel; ba ...]（此处只用到 pos）
-            % z_one: 标量伪距
-            % sat: struct，至少包含 sat.rs(3x1) 卫星 ECEF 位置、sat.elev 仰角（rad）、sat.cn0 (dBHz)
-            pos = x(1:3);
-            rho = norm(pos - sat.rs);
-            h   = rho;                      % 若扩展钟差： h = rho + c*cb
-            r   = z_one - h;                % 标量残差
-
-            % 雅可比：∂h/∂pos = (pos - rs)/||pos-rs||
-            if rho < 1e-8, los = [1;0;0]; else, los = (pos - sat.rs)/rho; end
-            Hpos = los';                    % 1x3
-            H    = [Hpos, zeros(1,6)];      % 对 [pos; vel; ba]
-
-            % 方差：按仰角/信噪比加权（对角）
-            sigma2 = cfg.tc.UERE^2;
-            if cfg.tc.elev_weight.enable && isfield(sat,'elev')
-                w_el  = cfg.tc.elev_weight.func( max(sat.elev, cfg.tc.elev_weight.min_el) );
-                sigma2 = sigma2 * w_el^2;
+        function [z_pred, H, R] = computeObservation(obj, x_pred, z_meas)
+            % x_pred: [x;y;z;Delta]  % Delta=接收机钟差(米)
+            % z_meas: struct with fields (来自 GNSSData.get_tight_measurement)
+            %   .P     (M x 1)   % 已预处理的伪距：P* = rho + resPc - TGD
+            %   .SV    (3 x M)   % 卫星ECEF（米）
+            %   .elev  (M x 1)   % 仰角（弧度）
+            %   .cn0   (M x 1)   % C/N0（dB-Hz）
+            %   .tgd   (M x 1)   % TGD（米） — 已在上游扣除，这里不再使用
+            %   .sys   (M x 1)   % 系统码（若后续要做ISB可用；此处未使用）
+            
+            X      = x_pred(1:3);
+            Delta  = x_pred(4);
+            SV     = z_meas.SV;                 % 3xM
+            M      = size(SV,2);
+            
+            % ---------- 预测量测 z_pred ----------
+            % h_i = ||SV_i - X|| + Delta
+            X = X(:);
+            d   = SV - X;                       % 3xM
+            rho = sqrt(sum(d.^2,1)).';          % Mx1
+            z_pred = rho + Delta;
+            
+            % ---------- 雅可比 H ----------
+            % ∂h/∂X = (X - SV_i)/rho_i = - (SV_i - X)/rho_i
+            rho_safe = max(rho, 1e-6);
+            u = (d ./ rho_safe.').';            % Mx3, 每行=(SV_i - X)/rho_i
+            H = zeros(M,4);
+            H(:,1:3) = -u;                      % 注意与残差定义一致：r = z - h
+            H(:,4)   = 1;                       % 钟差(米)
+            
+            % ---------- 噪声协方差 R (Herrera加权：sigma_i^2 = 1/W_i) ----------
+            % 若 cfg 未提供，给出合理默认参数
+            Tref = getfield_or(obj.cfg, "W_T", 30);   % dB-Hz
+            a    = getfield_or(obj.cfg, "W_a", 10);
+            A    = getfield_or(obj.cfg, "W_A", 10);
+            Fref = getfield_or(obj.cfg, "W_F", 50);
+            
+            Wi = zeros(M,1);
+            for i = 1:M
+                el  = z_meas.elev(i);
+                cn0 = z_meas.cn0(i);
+                if ~isfinite(el), el = 1e-3; end
+                if ~isfinite(cn0), cn0 = Tref; end
+            
+                term1 = 1 / (sin(max(el,1e-3))^2);
+                term2 = 10^(-(cn0 - Tref)/a);
+                kappa = (A * 10^(-(Fref - Tref)/a) - 1);
+                term3 = (kappa * (cn0 - Tref) / max(Fref - Tref, 1e-6) + 1);
+            
+                Wi(i) = term1 * term2 * term3;
             end
-            if cfg.tc.cn0_weight.enable && isfield(sat,'cn0')
-                w_cn0 = 1/(1 + cfg.tc.cn0_weight.k*exp(-sat.cn0));
-                sigma2 = sigma2 * (1/w_cn0)^2;
+            sigma2 = 1 ./ max(Wi, eps);
+            R = diag(sigma2);
+        end
+            
+        % ---- 小工具：安全读取 cfg 字段，没给就用默认 ----
+        function v = getfield_or(s, name, default)
+            if isstruct(s) && isfield(s, name) && ~isempty(s.(name))
+                v = s.(name);
+            else
+                v = default;
             end
-            R = sigma2;   % 标量
         end
     end
 end
