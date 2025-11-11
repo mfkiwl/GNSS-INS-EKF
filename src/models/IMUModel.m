@@ -1,36 +1,39 @@
 classdef IMUModel < TransitionModel
-    properties (Private)
-        imu_params;
-    end
     
     methods
-        function obj = IMUModel(imu_params)
-            obj.imu_params = imu_params;
+        function obj = IMUModel()
+            
         end
         
         function [x_pred, F, Q] = computePrediction(obj, x_prev, imu_data, dt)
+            % imu_data (1*1 struct)
             p_prev = x_prev(1:3);
             v_prev = x_prev(4:6);
             ba_prev = x_prev(7:9);
+            dtr_prev = x_prev(10);
             
             % 补偿IMU加速度偏置
-            a_B = imu_data.acc - ba_prev;
-            R_GB = computeRotation(p_prev(1), p_prev(2), p_prev(3), imu_data(1), imu_data(2), imu_data(3), imu_data(4));
-            a_G = R_GB * a_B;
+            % 只取开始时刻的加速度
+            a_B0 = imu_data.acc(1, :)';
+            a_B0 = a_B0 - ba_prev;
+            q_0 = imu_data.quat(1, :)';
+            R_GB = obj.computeRotation(p_prev(1), p_prev(2), p_prev(3), q_0(1), q_0(2), q_0(3), q_0(4));
+            a_G = R_GB * a_B0;
             
             % 状态预测（欧拉积分）
             p_pred = p_prev + v_prev * dt;  % 位置更新
             v_pred = v_prev + a_G * dt;   % 速度更新
             ba_pred = ba_prev;
+            dtr_pred = dtr_prev;
             
             % 输出
-            x_pred = [p_pred; v_pred; ba_pred];
+            x_pred = [p_pred; v_pred; ba_pred; dtr_pred];
             F = obj.computeF(x_prev, a_G, dt);
             Q = obj.computeQ(x_prev);
         end
     end
 
-    methods (Access = private)
+    methods (Static)
         function R_GB = computeRotation(x_ecef, y_ecef, z_ecef, q_x, q_y, q_z, q_w)
             % R_GB = R_GL * R_LB
             % 输入：
@@ -90,7 +93,9 @@ classdef IMUModel < TransitionModel
         
         function Q = computeQ(x_prev)
             n = length(x_prev);
-            Q = eye(n);
+            noise = [0.3; 0.3; 0.3; 0.15; 0.15; 0.15; 0.01; 0.01; 0.01; 1];
+            noise = noise.^2;
+            Q = diag(noise);
         end
     end
 end

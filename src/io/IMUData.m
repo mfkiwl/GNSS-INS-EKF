@@ -4,7 +4,7 @@ classdef IMUData < handle
         orientation         % 姿态四元数 [x, y, z, w]
         angular_velocity    % 角速度 [x, y, z]
         linear_acceleration % 线性加速度 [x, y, z]
-        imu_data            % IMU数据结构体 [time, quat, gyro, acc]
+        imu_cell            % IMU数据结构体 [time, quat, gyro, acc]
     end
     
     methods
@@ -12,21 +12,19 @@ classdef IMUData < handle
             obj.load_csv_data(csv_file);
         end
 
-        function imu_data = get_imu_data(obj)
-            imu_data = obj.imu_data;
+        function imu_cell = get_cell(obj)
+            imu_cell = obj.imu_cell;
         end
         
-        function show_basic_info(obj)
-            imu_cell = obj.imu_data;
-
-            time = imu_cell.time;
+        function show(obj)
+            time = obj.imu_cell.time;
             time = time - time(1);
 
-            eul = quat2euler(imu_cell.quat);
+            eul = quat2euler(obj.imu_cell.quat);
             eul = rad2deg(eul);
             IMUData.plot31(time, eul, "time(s)", ["roll", "pitch", "yaw"], "姿态输出");
             
-            acc = imu_cell.acc;
+            acc = obj.imu_cell.acc;
             IMUData.plot31(time, acc, "time(s)", ["acc_x", "acc_y", "acc_z"], "加速度计输出");
         end
     end
@@ -73,7 +71,7 @@ classdef IMUData < handle
             imu_struct.quat = obj.orientation;
             imu_struct.gyro = obj.angular_velocity;
             imu_struct.acc = obj.linear_acceleration;
-            obj.imu_data = imu_struct;
+            obj.imu_cell = imu_struct;
         end
     end
 

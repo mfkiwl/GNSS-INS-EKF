@@ -34,6 +34,10 @@ classdef GNSSData < handle
             n = obj.obs.n;
         end
 
+        function time = get_time_series(obj)
+            time = obj.obs.time;
+        end
+
         function z_meas = get_tight_measurement(obj, k)
             % 1) 取该历元观测
             obsc_all = obj.obs.selectTime(k);
@@ -157,7 +161,7 @@ classdef GNSSData < handle
             sol.plot()
         end
 
-        % 简单可视化（可选）
+        % 简单可视化
         function show(obj)
             obj.obs.plot;
             obj.obs.plot("L1");

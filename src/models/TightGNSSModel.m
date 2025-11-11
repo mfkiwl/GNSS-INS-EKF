@@ -1,4 +1,7 @@
 classdef TightGNSSModel < ObservationModel
+    properties
+        cfg;
+    end
 
     methods
         function [z_pred, H, R] = computeObservation(obj, x_pred, z_meas)
@@ -27,16 +30,16 @@ classdef TightGNSSModel < ObservationModel
             % ∂h/∂X = (X - SV_i)/rho_i = - (SV_i - X)/rho_i
             rho_safe = max(rho, 1e-6);
             u = (d ./ rho_safe.').';            % Mx3, 每行=(SV_i - X)/rho_i
-            H = zeros(M,4);
+            H = zeros(M, 10);
             H(:,1:3) = -u;                      % 注意与残差定义一致：r = z - h
-            H(:,4)   = 1;                       % 钟差(米)
+            H(:,10)   = 1;                       % 钟差(米)
             
             % ---------- 噪声协方差 R (Herrera加权：sigma_i^2 = 1/W_i) ----------
             % 若 cfg 未提供，给出合理默认参数
-            Tref = getfield_or(obj.cfg, "W_T", 30);   % dB-Hz
-            a    = getfield_or(obj.cfg, "W_a", 10);
-            A    = getfield_or(obj.cfg, "W_A", 10);
-            Fref = getfield_or(obj.cfg, "W_F", 50);
+            Tref = obj.getfield_or(obj.cfg, "W_T", 30);   % dB-Hz
+            a    = obj.getfield_or(obj.cfg, "W_a", 10);
+            A    = obj.getfield_or(obj.cfg, "W_A", 10);
+            Fref = obj.getfield_or(obj.cfg, "W_F", 50);
             
             Wi = zeros(M,1);
             for i = 1:M
@@ -55,8 +58,9 @@ classdef TightGNSSModel < ObservationModel
             sigma2 = 1 ./ max(Wi, eps);
             R = diag(sigma2);
         end
-            
-        % ---- 小工具：安全读取 cfg 字段，没给就用默认 ----
+    end
+
+    methods (Static)
         function v = getfield_or(s, name, default)
             if isstruct(s) && isfield(s, name) && ~isempty(s.(name))
                 v = s.(name);
